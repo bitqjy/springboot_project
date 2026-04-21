@@ -1,0 +1,59 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE mapper PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN" "http://mybatis.org/dtd/mybatis-3-mapper.dtd">
+
+<mapper namespace="com.dao.CeshichengjiDao">
+
+	<!-- 可根据自己的需求，是否要使用 -->
+    <resultMap type="com.entity.CeshichengjiEntity" id="ceshichengjiMap">
+        <result property="ceshibianhao" column="ceshibianhao"/>
+        <result property="ceshimingcheng" column="ceshimingcheng"/>
+        <result property="jiaoshigonghao" column="jiaoshigonghao"/>
+        <result property="jiaoshixingming" column="jiaoshixingming"/>
+        <result property="ceshipingfen" column="ceshipingfen"/>
+        <result property="ceshipingji" column="ceshipingji"/>
+        <result property="pingfenshijian" column="pingfenshijian"/>
+        <result property="yonghuzhanghao" column="yonghuzhanghao"/>
+        <result property="yonghuxingming" column="yonghuxingming"/>
+        <result property="banji" column="banji"/>
+        <result property="ceshipingjia" column="ceshipingjia"/>
+        <result property="run50m" column="run50m"/>
+        <result property="run1000m" column="run1000m"/>
+        <result property="run800m" column="run800m"/>
+        <result property="longJump" column="long_jump"/>
+        <result property="pullUp" column="pull_up"/>
+        <result property="sitUp" column="sit_up"/>
+        <result property="bmi" column="bmi"/>
+        <result property="gender" column="gender"/>
+        <result property="grade" column="grade"/>
+        <result property="abnormalFlag" column="abnormal_flag"/>
+        <result property="abnormalReason" column="abnormal_reason"/>
+        <result property="weakItems" column="weak_items"/>
+        <result property="strongItems" column="strong_items"/>
+    </resultMap>
+
+	<select id="selectListVO"
+		resultType="com.entity.vo.CeshichengjiVO" >
+		SELECT * FROM ceshichengji  ceshichengji         
+        <where> 1=1 ${ew.sqlSegment}</where>
+	</select>
+	
+	<select id="selectVO"
+		resultType="com.entity.vo.CeshichengjiVO" >
+		SELECT  ceshichengji.* FROM ceshichengji  ceshichengji 	
+ 		<where> 1=1 ${ew.sqlSegment}</where>
+	</select>
+
+    <select id="selectListView"
+		resultType="com.entity.view.CeshichengjiView" >
+
+		SELECT  ceshichengji.* FROM ceshichengji  ceshichengji 	        
+        <where> 1=1 ${ew.sqlSegment}</where>
+	</select>
+	
+	<select id="selectView"
+		resultType="com.entity.view.CeshichengjiView" >
+		SELECT * FROM ceshichengji  ceshichengji <where> 1=1 ${ew.sqlSegment}</where>
+	</select>
+	
+
+</mapper>

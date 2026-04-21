@@ -1,0 +1,38 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE mapper PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN" "http://mybatis.org/dtd/mybatis-3-mapper.dtd">
+
+<mapper namespace="com.dao.CeshimianceDao">
+
+    <resultMap type="com.entity.CeshimianceEntity" id="ceshimianceMap">
+        <result property="ceshibianhao" column="ceshibianhao"/>
+        <result property="ceshimingcheng" column="ceshimingcheng"/>
+        <result property="jiaoshigonghao" column="jiaoshigonghao"/>
+        <result property="jiaoshixingming" column="jiaoshixingming"/>
+        <result property="yonghuzhanghao" column="yonghuzhanghao"/>
+        <result property="yonghuxingming" column="yonghuxingming"/>
+        <result property="banji" column="banji"/>
+        <result property="mianceyuanyin" column="mianceyuanyin"/>
+        <result property="mianceriqi" column="mianceriqi"/>
+    </resultMap>
+
+    <select id="selectListVO" resultType="com.entity.vo.CeshimianceVO">
+        SELECT * FROM ceshimiance ceshimiance
+        <where> 1=1 ${ew.sqlSegment}</where>
+    </select>
+
+    <select id="selectVO" resultType="com.entity.vo.CeshimianceVO">
+        SELECT ceshimiance.* FROM ceshimiance ceshimiance
+        <where> 1=1 ${ew.sqlSegment}</where>
+    </select>
+
+    <select id="selectListView" resultType="com.entity.view.CeshimianceView">
+        SELECT ceshimiance.* FROM ceshimiance ceshimiance
+        <where> 1=1 ${ew.sqlSegment}</where>
+    </select>
+
+    <select id="selectView" resultType="com.entity.view.CeshimianceView">
+        SELECT * FROM ceshimiance ceshimiance <where> 1=1 ${ew.sqlSegment}</where>
+    </select>
+
+</mapper>
+
