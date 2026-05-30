@@ -70,7 +70,7 @@
         </el-form-item>  
         <div v-else>
           <el-form-item v-if="ruleForm.baogaowenjian" label="报告文件" prop="baogaowenjian">
-            <el-button type="text" size="small" @click="download($base.url+ruleForm.baogaowenjian)">下载</el-button>
+            <el-button type="text" size="small" @click="download(ruleForm.baogaowenjian)">下载</el-button>
           </el-form-item>
         </div>    
       </el-col>      
@@ -288,7 +288,11 @@ export default {
   methods: {
     // 下载
     download(file){
-      window.open(`${file}`)
+      if(!file) {
+        return
+      }
+      const fileName = file.split('/').pop()
+      window.open(`${this.$base.url}file/download?fileName=${encodeURIComponent(fileName)}`)
     },
     // 初始化
     init(id,type) {

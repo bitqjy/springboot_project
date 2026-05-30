@@ -120,7 +120,7 @@
                    :header-align="contents.tableAlign"
                     label="报告文件">
                     <template slot-scope="scope">
-                      <el-button type="text" size="small" @click="download($base.url+scope.row.baogaowenjian)">下载</el-button>
+	                      <el-button v-if="scope.row.baogaowenjian" type="text" size="small" @click="download(scope.row.baogaowenjian)">下载</el-button>
                     </template>
                   </el-table-column>
                 <el-table-column  :sortable="contents.tableSortable" :align="contents.tableAlign" 
@@ -159,7 +159,7 @@
                    :header-align="contents.tableAlign"
                    label="成绩状态">
                   <template slot-scope="scope">
-                    <el-tag size="mini" :type="scope.row.hasScore ? 'success' : 'info'">
+                    <el-tag size="mini" :type="getScoreStatusType(scope.row)">
                       {{ scope.row.scoreStatus || (scope.row.hasScore ? '已给成绩' : '未给成绩') }}
                     </el-tag>
                   </template>
@@ -489,24 +489,53 @@ export default {
             return
           }
           const result = data.data || {}
-          this.$set(row, 'hasScore', !!result.hasScore)
-          this.$set(row, 'scoreId', result.scoreId || '')
-          this.$set(row, 'scoreStatus', result.status || (result.hasScore ? '已给成绩' : '未给成绩'))
+          this.applyScoreStatus(row, result)
           const type = result.hasScore && result.scoreId ? 'crossEdit' : 'cross'
           this.ceshichengjiCrossAddOrUpdateHandler(row, type, '', '', '')
         })
       },
       getScoreActionLabel(row) {
-        return row && row.hasScore ? '修改成绩' : '成绩'
+        if (this.isReportMarkedExempt(row && row.beizhu)) {
+          return '修改免测'
+        }
+        return row && row.hasScore ? '修改成绩' : '成绩/免测'
+      },
+      getScoreStatusType(row) {
+        if (row && row.exemptFlag) {
+          return 'warning'
+        }
+        return row && row.hasScore ? 'success' : 'info'
+      },
+      normalizeRemark(remark) {
+        return String(remark || '')
+          .replace(/<[^>]*>/g, ' ')
+          .replace(/&nbsp;/gi, ' ')
+          .replace(/&amp;/gi, '&')
+          .replace(/　/g, ' ')
+          .replace(/\s+/g, ' ')
+          .trim()
+      },
+      isReportMarkedExempt(remark) {
+        return this.normalizeRemark(remark).indexOf('免测') !== -1
+      },
+      applyScoreStatus(row, result) {
+        const exemptFlag = this.isReportMarkedExempt(row && row.beizhu)
+        const hasScore = !!(result && result.hasScore)
+        this.$set(row, 'exemptFlag', exemptFlag)
+        this.$set(row, 'hasScore', hasScore)
+        this.$set(row, 'scoreId', (result && result.scoreId) || '')
+        if (exemptFlag) {
+          this.$set(row, 'scoreStatus', '已标记免测')
+          return
+        }
+        this.$set(row, 'scoreStatus', (result && result.status) || (hasScore ? '已给成绩' : '未给成绩'))
       },
       hydrateScoreStatus(rows) {
         if (!Array.isArray(rows) || rows.length === 0) {
           return
         }
         rows.forEach(row => {
-          this.$set(row, 'hasScore', false)
-          this.$set(row, 'scoreId', '')
-          this.$set(row, 'scoreStatus', '未给成绩')
+          this.applyScoreStatus(row, {})
           if (!row || !row.yonghuzhanghao || (!row.ceshibianhao && !row.ceshimingcheng)) {
             this.$set(row, 'scoreStatus', '缺少关键信息')
             return
@@ -524,10 +553,7 @@ export default {
             if (!(data && data.code === 0)) {
               return
             }
-            const result = data.data || {}
-            this.$set(row, 'hasScore', !!result.hasScore)
-            this.$set(row, 'scoreId', result.scoreId || '')
-            this.$set(row, 'scoreStatus', result.status || (result.hasScore ? '已给成绩' : '未给成绩'))
+            this.applyScoreStatus(row, data.data || {})
           })
         })
       },
@@ -598,7 +624,11 @@ export default {
     // 查看评论
     // 下载
     download(file){
-      window.open(`${file}`)
+      if(!file) {
+        return
+      }
+      const fileName = file.split('/').pop()
+      window.open(`${this.$base.url}file/download?fileName=${encodeURIComponent(fileName)}`)
     },
     // 删除
     deleteHandler(id) {

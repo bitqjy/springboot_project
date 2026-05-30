@@ -1,8 +1,12 @@
 HELP.md
 target/
+.m2/
 .codex
 .~*
 node_modules/
+__pycache__/
+*.pyc
+upload/
 !.mvn/wrapper/maven-wrapper.jar
 !**/src/main/**
 !**/src/test/**

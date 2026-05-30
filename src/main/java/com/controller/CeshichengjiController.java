@@ -3,16 +3,18 @@ package com.controller;
 import com.annotation.IgnoreAuth;
 import com.baomidou.mybatisplus.mapper.EntityWrapper;
 import com.baomidou.mybatisplus.mapper.Wrapper;
+import com.entity.CeshibaogaoEntity;
 import com.entity.CeshichengjiEntity;
-import com.entity.CeshimianceEntity;
 import com.entity.JiaoshiEntity;
+import com.entity.TizhiceshiEntity;
 import com.entity.YonghuEntity;
 import com.entity.view.CeshichengjiView;
 import com.service.AiAdviceService;
+import com.service.CeshibaogaoService;
 import com.service.CeshichengjiService;
-import com.service.CeshimianceService;
 import com.service.JiaoshiService;
 import com.service.ScoreAnalyzeService;
+import com.service.TizhiceshiService;
 import com.service.YonghuService;
 import com.service.dto.ScoreAnalysisResult;
 import com.utils.ExcelImportUtil;
@@ -37,6 +39,7 @@ import java.util.Date;
 import java.util.HashMap;
 import java.util.HashSet;
 import java.util.LinkedHashMap;
+import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Map;
 import java.util.Set;
@@ -58,7 +61,10 @@ public class CeshichengjiController {
     private JiaoshiService jiaoshiService;
 
     @Autowired
-    private CeshimianceService ceshimianceService;
+    private CeshibaogaoService ceshibaogaoService;
+
+    @Autowired
+    private TizhiceshiService tizhiceshiService;
 
     @Autowired
     private AiAdviceService aiAdviceService;
@@ -310,8 +316,9 @@ public class CeshichengjiController {
      */
     @RequestMapping("/importExcel")
     public R importExcel(@RequestParam("file") MultipartFile file,
-                         @RequestParam("ceshibianhao") String ceshibianhao,
-                         @RequestParam("ceshimingcheng") String ceshimingcheng,
+                         @RequestParam(value = "tizhiceshiId", required = false) Long tizhiceshiId,
+                         @RequestParam(value = "ceshibianhao", required = false) String ceshibianhao,
+                         @RequestParam(value = "ceshimingcheng", required = false) String ceshimingcheng,
                          @RequestParam(value = "banji", required = false) String banji,
                          @RequestParam(value = "dryRun", required = false, defaultValue = "false") Boolean dryRun,
                          @RequestParam(value = "strictAbnormal", required = false, defaultValue = "true") Boolean strictAbnormal,
@@ -333,6 +340,22 @@ public class CeshichengjiController {
         } else if ("users".equals(tableName)) {
             jiaoshigonghao = sessionUsername;
             jiaoshixingming = "管理员";
+        }
+
+        TizhiceshiEntity<?> importTask = resolveImportTaskForImport(tizhiceshiId, ceshibianhao, jiaoshigonghao, tableName);
+        if (importTask == null) {
+            return R.error("请先选择已发布测试任务，再导入成绩");
+        }
+        String resolvedTestNo = StringUtils.trimToEmpty(importTask.getCeshibianhao());
+        String resolvedTestName = StringUtils.trimToEmpty(importTask.getCeshimingcheng());
+        if (StringUtils.isBlank(resolvedTestNo) || StringUtils.isBlank(resolvedTestName)) {
+            return R.error("所选测试任务缺少测试编号或测试名称，暂不能导入");
+        }
+        if (StringUtils.isNotBlank(importTask.getJiaoshigonghao())) {
+            jiaoshigonghao = importTask.getJiaoshigonghao().trim();
+        }
+        if (StringUtils.isNotBlank(importTask.getJiaoshixingming())) {
+            jiaoshixingming = importTask.getJiaoshixingming().trim();
         }
 
         ExcelImportUtil.SheetData sheet = ExcelImportUtil.readFirstSheet(file);
@@ -387,7 +410,7 @@ public class CeshichengjiController {
             }
 
             CeshichengjiEntity entity = ceshichengjiService.selectOne(
-                    new EntityWrapper<CeshichengjiEntity>().eq("ceshibianhao", ceshibianhao).eq("yonghuzhanghao", zhanghao)
+                    new EntityWrapper<CeshichengjiEntity>().eq("ceshibianhao", resolvedTestNo).eq("yonghuzhanghao", zhanghao)
             );
             boolean exists = entity != null;
             if (!exists) {
@@ -395,8 +418,8 @@ public class CeshichengjiController {
                 entity.setId(randomId());
             }
 
-            entity.setCeshibianhao(ceshibianhao);
-            entity.setCeshimingcheng(ceshimingcheng);
+            entity.setCeshibianhao(resolvedTestNo);
+            entity.setCeshimingcheng(resolvedTestName);
             entity.setJiaoshigonghao(jiaoshigonghao);
             entity.setJiaoshixingming(jiaoshixingming);
             entity.setYonghuzhanghao(zhanghao);
@@ -473,42 +496,134 @@ public class CeshichengjiController {
         data.put("warnings", warnings);
         data.put("corrections", corrections);
         data.put("template", IMPORT_TEMPLATE_HEADERS);
+        data.put("tizhiceshiId", importTask.getId());
+        data.put("ceshibianhao", resolvedTestNo);
+        data.put("ceshimingcheng", resolvedTestName);
         return R.ok().put("data", data);
     }
 
     /**
-     * 缺测/免测/已测名单对比
+     * 成绩导入筛选项（已发布测试任务 + 班级）
+     */
+    @RequestMapping("/importOptions")
+    public R importOptions(@RequestParam(value = "tizhiceshiId", required = false) Long tizhiceshiId,
+                           HttpServletRequest request) {
+        if (!isTeacherOrAdminSession(request)) {
+            return R.error("仅教师或管理员可查看导入筛选项");
+        }
+
+        String tableName = String.valueOf(request.getSession().getAttribute("tableName"));
+        String teacherNo = "jiaoshi".equals(tableName) ? (String) request.getSession().getAttribute("username") : null;
+
+        EntityWrapper<TizhiceshiEntity> taskWrapper = new EntityWrapper<TizhiceshiEntity>();
+        if (StringUtils.isNotBlank(teacherNo)) {
+            taskWrapper.eq("jiaoshigonghao", teacherNo);
+        }
+        taskWrapper.orderBy("id", false);
+        List<TizhiceshiEntity> tasks = tizhiceshiService.selectList(taskWrapper);
+
+        List<Map<String, Object>> testOptions = new ArrayList<Map<String, Object>>();
+        if (tasks != null) {
+            for (TizhiceshiEntity task : tasks) {
+                if (task == null || StringUtils.isBlank(task.getCeshibianhao())) {
+                    continue;
+                }
+                Map<String, Object> item = new LinkedHashMap<String, Object>();
+                item.put("id", task.getId());
+                item.put("ceshibianhao", StringUtils.trimToEmpty(task.getCeshibianhao()));
+                item.put("ceshimingcheng", StringUtils.trimToEmpty(task.getCeshimingcheng()));
+                testOptions.add(item);
+            }
+        }
+
+        Set<String> banjiSet = new LinkedHashSet<String>();
+        List<YonghuEntity> students = yonghuService.selectList(new EntityWrapper<YonghuEntity>());
+        if (students != null) {
+            for (YonghuEntity student : students) {
+                addTextOption(banjiSet, student.getBanji());
+            }
+        }
+
+        TizhiceshiEntity<?> selectedTask = null;
+        if (tizhiceshiId != null) {
+            selectedTask = resolveImportTaskForImport(tizhiceshiId, null, teacherNo, tableName);
+            if (selectedTask == null) {
+                return R.error("所选测试任务不存在或无导入权限");
+            }
+            addTaskClassesForImport(banjiSet, selectedTask.getCeshibianhao(), teacherNo);
+        }
+
+        List<String> banjiOptions = new ArrayList<String>(banjiSet);
+        banjiOptions.sort(String::compareToIgnoreCase);
+
+        Map<String, Object> data = new LinkedHashMap<String, Object>();
+        data.put("tests", testOptions);
+        data.put("banjis", banjiOptions);
+        if (selectedTask != null) {
+            Map<String, Object> selected = new LinkedHashMap<String, Object>();
+            selected.put("id", selectedTask.getId());
+            selected.put("ceshibianhao", StringUtils.trimToEmpty(selectedTask.getCeshibianhao()));
+            selected.put("ceshimingcheng", StringUtils.trimToEmpty(selectedTask.getCeshimingcheng()));
+            data.put("selectedTest", selected);
+        }
+        return R.ok().put("data", data);
+    }
+
+    /**
+     * 报告提交/缺测/免测名单对比
      */
     @RequestMapping("/compareRoster")
     public R compareRoster(@RequestParam("ceshibianhao") String ceshibianhao,
                            @RequestParam("banji") String banji,
                            HttpServletRequest request) {
         if (!isTeacherOrAdminSession(request)) {
-            return R.error("仅教师或管理员可使用缺测/免测识别");
+            return R.error("仅教师或管理员可使用报告提交识别");
         }
+        String tableName = String.valueOf(request.getSession().getAttribute("tableName"));
+        String teacherNo = "jiaoshi".equals(tableName) ? (String) request.getSession().getAttribute("username") : null;
+
         List<YonghuEntity> roster = yonghuService.selectList(new EntityWrapper<YonghuEntity>().eq("banji", banji));
-        List<CeshichengjiEntity> scored = ceshichengjiService.selectList(
-                new EntityWrapper<CeshichengjiEntity>().eq("ceshibianhao", ceshibianhao).eq("banji", banji)
-        );
-        List<CeshimianceEntity> exempt = ceshimianceService.selectList(
-                new EntityWrapper<CeshimianceEntity>().eq("ceshibianhao", ceshibianhao).eq("banji", banji)
-        );
+        if (roster == null) {
+            roster = new ArrayList<YonghuEntity>();
+        }
+        EntityWrapper<CeshichengjiEntity> scoreWrapper = new EntityWrapper<CeshichengjiEntity>();
+        scoreWrapper.eq("ceshibianhao", ceshibianhao).eq("banji", banji);
+        if (StringUtils.isNotBlank(teacherNo)) {
+            scoreWrapper.eq("jiaoshigonghao", teacherNo);
+        }
+        scoreWrapper.orderBy("id", false);
+        List<CeshichengjiEntity> scored = ceshichengjiService.selectList(scoreWrapper);
+        if (scored == null) {
+            scored = new ArrayList<CeshichengjiEntity>();
+        }
+
+        EntityWrapper<CeshibaogaoEntity> reportWrapper = new EntityWrapper<CeshibaogaoEntity>();
+        reportWrapper.eq("ceshibianhao", ceshibianhao).eq("banji", banji);
+        if (StringUtils.isNotBlank(teacherNo)) {
+            reportWrapper.eq("jiaoshigonghao", teacherNo);
+        }
+        reportWrapper.orderBy("id", false);
+        List<CeshibaogaoEntity> reports = ceshibaogaoService.selectList(reportWrapper);
+        if (reports == null) {
+            reports = new ArrayList<CeshibaogaoEntity>();
+        }
 
         Map<String, CeshichengjiEntity> scoredByAccount = new HashMap<String, CeshichengjiEntity>();
         for (CeshichengjiEntity e : scored) {
-            if (StringUtils.isNotBlank(e.getYonghuzhanghao())) {
+            if (StringUtils.isNotBlank(e.getYonghuzhanghao()) && !scoredByAccount.containsKey(e.getYonghuzhanghao())) {
                 scoredByAccount.put(e.getYonghuzhanghao(), e);
             }
         }
-        Map<String, CeshimianceEntity> exemptByAccount = new HashMap<String, CeshimianceEntity>();
-        for (CeshimianceEntity e : exempt) {
-            if (StringUtils.isNotBlank(e.getYonghuzhanghao())) {
-                exemptByAccount.put(e.getYonghuzhanghao(), e);
+        Map<String, CeshibaogaoEntity> reportByAccount = new HashMap<String, CeshibaogaoEntity>();
+        for (CeshibaogaoEntity report : reports) {
+            if (StringUtils.isNotBlank(report.getYonghuzhanghao()) && !reportByAccount.containsKey(report.getYonghuzhanghao())) {
+                reportByAccount.put(report.getYonghuzhanghao(), report);
             }
         }
 
         List<Map<String, Object>> missing = new ArrayList<Map<String, Object>>();
         List<Map<String, Object>> measured = new ArrayList<Map<String, Object>>();
+        List<Map<String, Object>> submitted = new ArrayList<Map<String, Object>>();
         List<Map<String, Object>> exempted = new ArrayList<Map<String, Object>>();
         int abnormalCount = 0;
 
@@ -517,23 +632,38 @@ public class CeshichengjiController {
             if (StringUtils.isBlank(acc)) {
                 continue;
             }
-            if (exemptByAccount.containsKey(acc)) {
+            CeshibaogaoEntity report = reportByAccount.get(acc);
+            CeshichengjiEntity score = scoredByAccount.get(acc);
+            if (report == null) {
+                Map<String, Object> m = new HashMap<String, Object>();
+                m.put("status", "MISSING_REPORT");
+                m.put("yonghuzhanghao", acc);
+                m.put("yonghuxingming", u.getYonghuxingming());
+                m.put("banji", u.getBanji());
+                if (score != null) {
+                    m.put("chengji", score);
+                }
+                missing.add(m);
+                continue;
+            }
+            if (isExemptReport(report)) {
                 Map<String, Object> m = new HashMap<String, Object>();
                 m.put("status", "EXEMPT");
                 m.put("yonghuzhanghao", acc);
                 m.put("yonghuxingming", u.getYonghuxingming());
                 m.put("banji", u.getBanji());
-                m.put("miance", exemptByAccount.get(acc));
+                m.put("baogao", report);
+                m.put("mianceyuanyin", reportExemptReason(report));
                 exempted.add(m);
                 continue;
             }
-            if (scoredByAccount.containsKey(acc)) {
-                CeshichengjiEntity score = scoredByAccount.get(acc);
+            if (score != null) {
                 Map<String, Object> m = new HashMap<String, Object>();
-                m.put("status", "TESTED");
+                m.put("status", "SCORED");
                 m.put("yonghuzhanghao", acc);
                 m.put("yonghuxingming", u.getYonghuxingming());
                 m.put("banji", u.getBanji());
+                m.put("baogao", report);
                 m.put("chengji", score);
                 measured.add(m);
                 if (score.getAbnormalFlag() != null && score.getAbnormalFlag() == 1) {
@@ -542,24 +672,128 @@ public class CeshichengjiController {
                 continue;
             }
             Map<String, Object> m = new HashMap<String, Object>();
-            m.put("status", "ABSENT");
+            m.put("status", "SUBMITTED");
             m.put("yonghuzhanghao", acc);
             m.put("yonghuxingming", u.getYonghuxingming());
             m.put("banji", u.getBanji());
-            missing.add(m);
+            m.put("baogao", report);
+            submitted.add(m);
         }
 
         Map<String, Object> data = new HashMap<String, Object>();
         data.put("banji", banji);
         data.put("ceshibianhao", ceshibianhao);
         data.put("rosterCount", roster.size());
+        data.put("submittedCount", measured.size() + submitted.size() + exempted.size());
+        data.put("scoredCount", measured.size());
         data.put("measuredCount", measured.size());
+        data.put("pendingCount", submitted.size());
         data.put("exemptCount", exempted.size());
         data.put("missingCount", missing.size());
         data.put("abnormalCount", abnormalCount);
         data.put("measured", measured);
+        data.put("submitted", submitted);
         data.put("exempt", exempted);
         data.put("missing", missing);
+        return R.ok().put("data", data);
+    }
+
+    /**
+     * 成绩统计筛选项：测试编号、班级
+     */
+    @RequestMapping("/statsOptions")
+    public R statsOptions(@RequestParam(value = "ceshibianhao", required = false) String ceshibianhao,
+                          HttpServletRequest request) {
+        if (!isTeacherOrAdminSession(request)) {
+            return R.error("仅教师或管理员可查看统计筛选项");
+        }
+
+        String tableName = String.valueOf(request.getSession().getAttribute("tableName"));
+        String teacherNo = "jiaoshi".equals(tableName) ? (String) request.getSession().getAttribute("username") : null;
+
+        Map<String, Map<String, Object>> testMap = new LinkedHashMap<String, Map<String, Object>>();
+        EntityWrapper<TizhiceshiEntity> testWrapper = new EntityWrapper<TizhiceshiEntity>();
+        if (StringUtils.isNotBlank(teacherNo)) {
+            testWrapper.eq("jiaoshigonghao", teacherNo);
+        }
+        List<TizhiceshiEntity> tests = tizhiceshiService.selectList(testWrapper);
+        if (tests != null) {
+            for (TizhiceshiEntity test : tests) {
+                addTestOption(testMap, test.getCeshibianhao(), test.getCeshimingcheng());
+            }
+        }
+
+        EntityWrapper<CeshichengjiEntity> scoreTestWrapper = new EntityWrapper<CeshichengjiEntity>();
+        if (StringUtils.isNotBlank(teacherNo)) {
+            scoreTestWrapper.eq("jiaoshigonghao", teacherNo);
+        }
+        List<CeshichengjiEntity> scoresForTests = ceshichengjiService.selectList(scoreTestWrapper);
+        if (scoresForTests != null) {
+            for (CeshichengjiEntity score : scoresForTests) {
+                addTestOption(testMap, score.getCeshibianhao(), score.getCeshimingcheng());
+            }
+        }
+
+        EntityWrapper<CeshibaogaoEntity> reportTestWrapper = new EntityWrapper<CeshibaogaoEntity>();
+        if (StringUtils.isNotBlank(teacherNo)) {
+            reportTestWrapper.eq("jiaoshigonghao", teacherNo);
+        }
+        List<CeshibaogaoEntity> reportsForTests = ceshibaogaoService.selectList(reportTestWrapper);
+        if (reportsForTests != null) {
+            for (CeshibaogaoEntity report : reportsForTests) {
+                addTestOption(testMap, report.getCeshibianhao(), report.getCeshimingcheng());
+            }
+        }
+
+        Set<String> banjiSet = new LinkedHashSet<String>();
+        List<YonghuEntity> students = yonghuService.selectList(new EntityWrapper<YonghuEntity>());
+        if (students != null) {
+            for (YonghuEntity student : students) {
+                addTextOption(banjiSet, student.getBanji());
+            }
+        }
+
+        EntityWrapper<CeshichengjiEntity> scoreClassWrapper = new EntityWrapper<CeshichengjiEntity>();
+        if (StringUtils.isNotBlank(teacherNo)) {
+            scoreClassWrapper.eq("jiaoshigonghao", teacherNo);
+        }
+        if (StringUtils.isNotBlank(ceshibianhao)) {
+            scoreClassWrapper.eq("ceshibianhao", ceshibianhao);
+        }
+        List<CeshichengjiEntity> scoresForClasses = ceshichengjiService.selectList(scoreClassWrapper);
+        if (scoresForClasses != null) {
+            for (CeshichengjiEntity score : scoresForClasses) {
+                addTextOption(banjiSet, score.getBanji());
+            }
+        }
+
+        EntityWrapper<CeshibaogaoEntity> reportClassWrapper = new EntityWrapper<CeshibaogaoEntity>();
+        if (StringUtils.isNotBlank(teacherNo)) {
+            reportClassWrapper.eq("jiaoshigonghao", teacherNo);
+        }
+        if (StringUtils.isNotBlank(ceshibianhao)) {
+            reportClassWrapper.eq("ceshibianhao", ceshibianhao);
+        }
+        List<CeshibaogaoEntity> reportsForClasses = ceshibaogaoService.selectList(reportClassWrapper);
+        if (reportsForClasses != null) {
+            for (CeshibaogaoEntity report : reportsForClasses) {
+                addTextOption(banjiSet, report.getBanji());
+            }
+        }
+        if (banjiSet.isEmpty() && students != null) {
+            for (YonghuEntity student : students) {
+                addTextOption(banjiSet, student.getBanji());
+            }
+        }
+
+        List<Map<String, Object>> testOptions = new ArrayList<Map<String, Object>>(testMap.values());
+        testOptions.sort((a, b) -> String.valueOf(a.get("ceshibianhao")).compareToIgnoreCase(String.valueOf(b.get("ceshibianhao"))));
+        List<String> banjiOptions = new ArrayList<String>(banjiSet);
+        banjiOptions.sort(String::compareToIgnoreCase);
+
+        Map<String, Object> data = new LinkedHashMap<String, Object>();
+        data.put("tests", testOptions);
+        data.put("banjis", banjiOptions);
         return R.ok().put("data", data);
     }
 
@@ -573,19 +807,44 @@ public class CeshichengjiController {
         if (!isTeacherOrAdminSession(request)) {
             return R.error("仅教师或管理员可查看统计");
         }
+        String tableName = String.valueOf(request.getSession().getAttribute("tableName"));
+        String teacherNo = "jiaoshi".equals(tableName) ? (String) request.getSession().getAttribute("username") : null;
+
         EntityWrapper<CeshichengjiEntity> scoreWrapper = new EntityWrapper<CeshichengjiEntity>();
         scoreWrapper.eq("ceshibianhao", ceshibianhao);
+        if (StringUtils.isNotBlank(teacherNo)) {
+            scoreWrapper.eq("jiaoshigonghao", teacherNo);
+        }
         if (StringUtils.isNotBlank(banji)) {
             scoreWrapper.eq("banji", banji);
         }
         List<CeshichengjiEntity> scoreList = ceshichengjiService.selectList(scoreWrapper);
-
-        EntityWrapper<CeshimianceEntity> exemptWrapper = new EntityWrapper<CeshimianceEntity>();
-        exemptWrapper.eq("ceshibianhao", ceshibianhao);
-        if (StringUtils.isNotBlank(banji)) {
-            exemptWrapper.eq("banji", banji);
+        if (scoreList == null) {
+            scoreList = new ArrayList<CeshichengjiEntity>();
         }
-        List<CeshimianceEntity> exemptList = ceshimianceService.selectList(exemptWrapper);
+
+        EntityWrapper<CeshibaogaoEntity> reportWrapper = new EntityWrapper<CeshibaogaoEntity>();
+        reportWrapper.eq("ceshibianhao", ceshibianhao);
+        if (StringUtils.isNotBlank(teacherNo)) {
+            reportWrapper.eq("jiaoshigonghao", teacherNo);
+        }
+        if (StringUtils.isNotBlank(banji)) {
+            reportWrapper.eq("banji", banji);
+        }
+        List<CeshibaogaoEntity> reportList = ceshibaogaoService.selectList(reportWrapper);
+        if (reportList == null) {
+            reportList = new ArrayList<CeshibaogaoEntity>();
+        }
+        Set<String> submittedAccounts = new HashSet<String>();
+        Set<String> exemptAccounts = new HashSet<String>();
+        for (CeshibaogaoEntity report : reportList) {
+            if (StringUtils.isNotBlank(report.getYonghuzhanghao())) {
+                submittedAccounts.add(report.getYonghuzhanghao());
+                if (isExemptReport(report)) {
+                    exemptAccounts.add(report.getYonghuzhanghao());
+                }
+            }
+        }
 
         int abnormalCount = 0;
         int totalScore = 0;
@@ -642,21 +901,21 @@ public class CeshichengjiController {
 
         Integer rosterCount = null;
         Integer absentCount = null;
+        int pendingScoreCount = 0;
+        Set<String> testedAccounts = new HashSet<String>();
+        for (CeshichengjiEntity record : scoreList) {
+            if (StringUtils.isNotBlank(record.getYonghuzhanghao())) {
+                testedAccounts.add(record.getYonghuzhanghao());
+            }
+        }
+        for (String account : submittedAccounts) {
+            if (!testedAccounts.contains(account) && !exemptAccounts.contains(account)) {
+                pendingScoreCount++;
+            }
+        }
         if (StringUtils.isNotBlank(banji)) {
             List<YonghuEntity> roster = yonghuService.selectList(new EntityWrapper<YonghuEntity>().eq("banji", banji));
             rosterCount = roster == null ? 0 : roster.size();
-            Set<String> testedAccounts = new HashSet<String>();
-            for (CeshichengjiEntity record : scoreList) {
-                if (StringUtils.isNotBlank(record.getYonghuzhanghao())) {
-                    testedAccounts.add(record.getYonghuzhanghao());
-                }
-            }
-            Set<String> exemptAccounts = new HashSet<String>();
-            for (CeshimianceEntity record : exemptList) {
-                if (StringUtils.isNotBlank(record.getYonghuzhanghao())) {
-                    exemptAccounts.add(record.getYonghuzhanghao());
-                }
-            }
             int missing = 0;
             if (roster != null) {
                 for (YonghuEntity u : roster) {
@@ -664,7 +923,7 @@ public class CeshichengjiController {
                     if (StringUtils.isBlank(acc)) {
                         continue;
                     }
-                    if (!testedAccounts.contains(acc) && !exemptAccounts.contains(acc)) {
+                    if (!submittedAccounts.contains(acc)) {
                         missing++;
                     }
                 }
@@ -676,7 +935,9 @@ public class CeshichengjiController {
         data.put("ceshibianhao", ceshibianhao);
         data.put("banji", banji);
         data.put("testedCount", scoreList.size());
-        data.put("exemptCount", exemptList.size());
+        data.put("submittedCount", submittedAccounts.size());
+        data.put("pendingScoreCount", pendingScoreCount);
+        data.put("exemptCount", exemptAccounts.size());
         data.put("abnormalCount", abnormalCount);
         data.put("avgScore", scoreCount == 0 ? null : (double) Math.round((totalScore * 10D / scoreCount)) / 10D);
         data.put("ratingDistribution", ratingDist);
@@ -972,6 +1233,55 @@ public class CeshichengjiController {
         }
         String tableName = String.valueOf(request.getSession().getAttribute("tableName"));
         return isTeacherOrAdmin(tableName);
+    }
+
+    private TizhiceshiEntity<?> resolveImportTaskForImport(Long tizhiceshiId,
+                                                           String ceshibianhao,
+                                                           String teacherNo,
+                                                           String tableName) {
+        EntityWrapper<TizhiceshiEntity> wrapper = new EntityWrapper<TizhiceshiEntity>();
+        if ("jiaoshi".equals(tableName) && StringUtils.isNotBlank(teacherNo)) {
+            wrapper.eq("jiaoshigonghao", teacherNo);
+        }
+        if (tizhiceshiId != null) {
+            wrapper.eq("id", tizhiceshiId);
+            return tizhiceshiService.selectOne(wrapper);
+        }
+        if (StringUtils.isBlank(ceshibianhao)) {
+            return null;
+        }
+        wrapper.eq("ceshibianhao", ceshibianhao.trim());
+        return tizhiceshiService.selectOne(wrapper);
+    }
+
+    private void addTaskClassesForImport(Set<String> banjiSet, String ceshibianhao, String teacherNo) {
+        if (banjiSet == null || StringUtils.isBlank(ceshibianhao)) {
+            return;
+        }
+
+        EntityWrapper<CeshichengjiEntity> scoreWrapper = new EntityWrapper<CeshichengjiEntity>();
+        scoreWrapper.eq("ceshibianhao", ceshibianhao.trim());
+        if (StringUtils.isNotBlank(teacherNo)) {
+            scoreWrapper.eq("jiaoshigonghao", teacherNo);
+        }
+        List<CeshichengjiEntity> scores = ceshichengjiService.selectList(scoreWrapper);
+        if (scores != null) {
+            for (CeshichengjiEntity score : scores) {
+                addTextOption(banjiSet, score.getBanji());
+            }
+        }
+
+        EntityWrapper<CeshibaogaoEntity> reportWrapper = new EntityWrapper<CeshibaogaoEntity>();
+        reportWrapper.eq("ceshibianhao", ceshibianhao.trim());
+        if (StringUtils.isNotBlank(teacherNo)) {
+            reportWrapper.eq("jiaoshigonghao", teacherNo);
+        }
+        List<CeshibaogaoEntity> reports = ceshibaogaoService.selectList(reportWrapper);
+        if (reports != null) {
+            for (CeshibaogaoEntity report : reports) {
+                addTextOption(banjiSet, report.getBanji());
+            }
+        }
     }
 
     private void enrichStudentFields(CeshichengjiEntity<?> record) {
@@ -1300,6 +1610,57 @@ public class CeshichengjiController {
                 .replace("（", "(")
                 .replace("）", ")")
                 .replaceAll("\\s+", "");
+    }
+
+    private static void addTestOption(Map<String, Map<String, Object>> testMap,
+                                      String ceshibianhao,
+                                      String ceshimingcheng) {
+        String testNo = StringUtils.trimToEmpty(ceshibianhao);
+        if (StringUtils.isBlank(testNo)) {
+            return;
+        }
+        Map<String, Object> item = testMap.get(testNo);
+        if (item == null) {
+            item = new LinkedHashMap<String, Object>();
+            item.put("ceshibianhao", testNo);
+            item.put("ceshimingcheng", StringUtils.trimToEmpty(ceshimingcheng));
+            testMap.put(testNo, item);
+            return;
+        }
+
+        Object existingName = item.get("ceshimingcheng");
+        if (StringUtils.isBlank(existingName == null ? null : String.valueOf(existingName))
+                && StringUtils.isNotBlank(ceshimingcheng)) {
+            item.put("ceshimingcheng", ceshimingcheng.trim());
+        }
+    }
+
+    private static void addTextOption(Set<String> options, String value) {
+        if (StringUtils.isNotBlank(value)) {
+            options.add(value.trim());
+        }
+    }
+
+    private static boolean isExemptReport(CeshibaogaoEntity report) {
+        return report != null && normalizeReportRemark(report.getBeizhu()).contains("免测");
+    }
+
+    private static String reportExemptReason(CeshibaogaoEntity report) {
+        String remark = report == null ? "" : normalizeReportRemark(report.getBeizhu());
+        return StringUtils.isBlank(remark) ? "报告备注标记免测" : remark;
+    }
+
+    private static String normalizeReportRemark(String remark) {
+        if (StringUtils.isBlank(remark)) {
+            return "";
+        }
+        return remark
+                .replaceAll("<[^>]*>", " ")
+                .replace("&nbsp;", " ")
+                .replace("&amp;", "&")
+                .replace("　", " ")
+                .replaceAll("\\s+", " ")
+                .trim();
     }
 
     private static String scoreToRating(int score) {

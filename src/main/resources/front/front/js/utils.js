@@ -4,7 +4,20 @@
  */
 function jump(url) {
 	if (!url || url == 'null' || url == null) {
+		localStorage.setItem('iframeUrl', './pages/home/home.html');
 		window.location.href = './index.html';
+		return;
+	}
+	if (url.indexOf('login/login.html') !== -1) {
+		localStorage.setItem('iframeUrl', './pages/home/home.html');
+		var loginUrl = document.createElement('a');
+		loginUrl.href = url;
+		if (window.top && window.top !== window) {
+			window.top.location.href = loginUrl.href;
+		} else {
+			window.location.href = loginUrl.href;
+		}
+		return;
 	}
 	// 路径访问设置
 	localStorage.setItem('iframeUrl', url.replace('../', './pages/'));

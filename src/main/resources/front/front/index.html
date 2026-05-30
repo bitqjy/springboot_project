@@ -286,7 +286,11 @@
 			}
 
 			var iframeUrl = localStorage.getItem('iframeUrl');
-			document.getElementById('iframe').src = iframeUrl  || './pages/home/home.html';
+			if (!iframeUrl || iframeUrl.indexOf('login/login.html') !== -1) {
+				iframeUrl = './pages/home/home.html';
+				localStorage.setItem('iframeUrl', iframeUrl);
+			}
+			document.getElementById('iframe').src = iframeUrl;
 
       // var i = 0;
       setInterval(function(){

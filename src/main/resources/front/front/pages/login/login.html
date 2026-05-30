@@ -282,9 +282,16 @@
 		    	if(res.data.vip) {
 				localStorage.setItem('vip', res.data.vip);
 		    	}
-                        // 路径访问设置
-                        window.location.href = '../../index.html';
-                    })
+	                        // 登录页可能在首页 iframe 内打开，成功后必须跳出 iframe，并避免首页继续加载登录页。
+	                        localStorage.setItem('iframeUrl', './pages/home/home.html');
+	                        var indexUrl = document.createElement('a');
+	                        indexUrl.href = '../../index.html';
+	                        if (window.top && window.top !== window) {
+	                            window.top.location.href = indexUrl.href;
+	                        } else {
+	                            window.location.href = indexUrl.href;
+	                        }
+	                    })
                     
                 });
                 return false

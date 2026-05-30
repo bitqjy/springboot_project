@@ -207,10 +207,11 @@ export default {
     return {
       id: '',
       type: 'else',
-      ceshipingjiOptions: ['优秀', '良好', '及格', '不及格'],
+      ceshipingjiOptions: ['优秀', '良好', '及格', '不及格', '免测'],
       analysis: null,
       aiPreviewDialogVisible: false,
       aiPreviewText: '',
+      reportContext: null,
       ruleForm: {
         id: '',
         ceshibianhao: '',
@@ -273,6 +274,7 @@ export default {
       this.analysis = null
       this.aiPreviewText = ''
       this.aiPreviewDialogVisible = false
+      this.reportContext = null
       this.resetForm()
       if (this.type === 'cross') {
         // 跨表（测试报告 -> 测试成绩）：始终按新增处理，避免把报告ID当成成绩ID
@@ -329,10 +331,12 @@ export default {
     },
     resetForm() {
       this.ruleForm = this.getDefaultForm()
+      this.reportContext = null
     },
     applyCrossDefaults(options) {
       const crossObj = this.$storage.getObj('crossObj') || {}
       const preserveId = options && options.preserveId
+      this.reportContext = Object.assign({}, crossObj)
       if (!preserveId) {
         this.ruleForm.id = ''
       }
@@ -345,6 +349,9 @@ export default {
       this.ruleForm.banji = crossObj.banji || this.ruleForm.banji
       if (crossObj.beizhu && !this.ruleForm.ceshipingjia) {
         this.ruleForm.ceshipingjia = crossObj.beizhu
+      }
+      if (this.isReportMarkedExempt(crossObj.beizhu)) {
+        this.ruleForm.ceshipingji = '免测'
       }
       if (this.ruleForm.yonghuzhanghao) {
         this.fillStudentByAccount(this.ruleForm.yonghuzhanghao)
@@ -414,6 +421,10 @@ export default {
       })
     },
     doValidate() {
+      if (this.ruleForm.ceshipingji === '免测') {
+        this.$message.warning('已选择免测，无需进行成绩校验')
+        return
+      }
       const payload = this.buildPayload()
       this.$http({
         url: 'ceshichengji/validate',
@@ -442,6 +453,10 @@ export default {
       })
     },
     previewAiAdvice() {
+      if (this.ruleForm.ceshipingji === '免测') {
+        this.$message.warning('已选择免测，无需生成成绩建议')
+        return
+      }
       const payload = this.buildPayload()
       this.$http({
         url: 'ceshichengji/aiSuggestPreview',
@@ -466,30 +481,146 @@ export default {
       this.$message.success('已写入测试评价')
     },
     onSubmit() {
+      if (this.ruleForm.ceshipingji === '免测') {
+        this.submitExempt()
+        return
+      }
       this.$refs.ruleForm.validate(valid => {
         if (!valid) {
           return
         }
         const payload = this.buildPayload()
-        this.$http({
-          url: `ceshichengji/${!payload.id ? 'save' : 'update'}`,
-          method: 'post',
-          data: payload
-        }).then(({ data }) => {
-          if (data && data.code === 0) {
-            if (data.analysis) {
-              this.analysis = data.analysis
+        const saveScore = () => {
+          this.$http({
+            url: `ceshichengji/${!payload.id ? 'save' : 'update'}`,
+            method: 'post',
+            data: payload
+          }).then(({ data }) => {
+            if (data && data.code === 0) {
+              if (data.analysis) {
+                this.analysis = data.analysis
+              }
+              this.finishSubmit('操作成功')
+            } else {
+              this.$message.error(data.msg || '提交失败')
             }
-            this.$message.success('操作成功')
-            this.parent.showFlag = true
-            this.parent.addOrUpdateFlag = false
-            this.parent.ceshichengjiCrossAddOrUpdateFlag = false
-            this.parent.search()
-          } else {
-            this.$message.error(data.msg || '提交失败')
-          }
+          })
+        }
+        this.syncReportRemark(false).then(saveScore).catch(error => {
+          this.$message.error((error && error.message) || '同步报告状态失败')
         })
       })
+    },
+    finishSubmit(message) {
+      this.$message.success(message || '操作成功')
+      this.parent.showFlag = true
+      this.parent.addOrUpdateFlag = false
+      this.parent.ceshichengjiCrossAddOrUpdateFlag = false
+      this.parent.search()
+    },
+    submitExempt() {
+      if (!this.reportContext || !this.reportContext.id) {
+        this.$message.error('缺少报告记录，无法标记免测')
+        return
+      }
+      this.syncReportRemark(true)
+        .then(() => this.removeExistingScore())
+        .then(() => {
+          this.finishSubmit('已标记为免测')
+        })
+        .catch(error => {
+          this.$message.error((error && error.message) || '免测提交失败')
+        })
+    },
+    removeExistingScore() {
+      const scoreId = this.ruleForm.id || (this.reportContext && this.reportContext.scoreId)
+      if (!scoreId) {
+        return Promise.resolve()
+      }
+      return this.$http({
+        url: 'ceshichengji/delete',
+        method: 'post',
+        data: [Number(scoreId)]
+      }).then(({ data }) => {
+        if (!(data && data.code === 0)) {
+          return Promise.reject(new Error((data && data.msg) || '免测已标记，但原成绩删除失败'))
+        }
+        this.ruleForm.id = ''
+        if (this.reportContext) {
+          this.reportContext.scoreId = ''
+          this.reportContext.hasScore = false
+        }
+        return data
+      })
+    },
+    syncReportRemark(markExempt) {
+      if (!this.isCrossMode) {
+        return Promise.resolve()
+      }
+      const report = Object.assign({}, this.reportContext || this.$storage.getObj('crossObj') || {})
+      if (!report.id) {
+        return Promise.resolve()
+      }
+      const nextRemark = markExempt ? this.buildExemptRemark(report.beizhu) : this.stripExemptRemark(report.beizhu)
+      const payload = {
+        id: report.id,
+        ceshibianhao: report.ceshibianhao,
+        ceshimingcheng: report.ceshimingcheng,
+        jiaoshigonghao: report.jiaoshigonghao,
+        jiaoshixingming: report.jiaoshixingming,
+        baogaowenjian: report.baogaowenjian,
+        tijiaoriqi: report.tijiaoriqi,
+        yonghuzhanghao: report.yonghuzhanghao,
+        yonghuxingming: report.yonghuxingming,
+        banji: report.banji,
+        beizhu: nextRemark,
+        addtime: report.addtime
+      }
+      return this.$http({
+        url: 'ceshibaogao/update',
+        method: 'post',
+        data: payload
+      }).then(({ data }) => {
+        if (!(data && data.code === 0)) {
+          return Promise.reject(new Error((data && data.msg) || '报告备注同步失败'))
+        }
+        this.reportContext = Object.assign({}, report, { beizhu: nextRemark })
+        return data
+      })
+    },
+    normalizeRemark(remark) {
+      return String(remark || '')
+        .replace(/<[^>]*>/g, ' ')
+        .replace(/&nbsp;/gi, ' ')
+        .replace(/&amp;/gi, '&')
+        .replace(/　/g, ' ')
+        .replace(/\s+/g, ' ')
+        .trim()
+    },
+    isReportMarkedExempt(remark) {
+      return this.normalizeRemark(remark).indexOf('免测') !== -1
+    },
+    extractExemptReason(remark) {
+      const normalized = this.normalizeRemark(remark)
+      const match = normalized.match(/免测[:：]?\s*(.*)/)
+      return match && match[1] ? match[1].trim() : ''
+    },
+    stripExemptRemark(remark) {
+      let cleaned = String(remark || '')
+      cleaned = cleaned.replace(/<p[^>]*>\s*免测(?:[:：][\s\S]*?)?<\/p>/gi, '')
+      cleaned = cleaned.replace(/<div[^>]*>\s*免测(?:[:：][\s\S]*?)?<\/div>/gi, '')
+      cleaned = cleaned.replace(/(?:^|<br\s*\/?>|\r?\n)\s*免测[:：]?[^\n\r<]*/gi, '')
+      cleaned = cleaned.replace(/(<br\s*\/?>\s*){2,}/gi, '<br>')
+      return cleaned.trim()
+    },
+    buildExemptRemark(remark) {
+      const cleaned = this.stripExemptRemark(remark)
+      const reason = this.extractExemptReason(this.ruleForm.ceshipingjia) || this.normalizeRemark(this.ruleForm.ceshipingjia)
+      const exemptText = reason ? `免测：${reason}` : '免测'
+      if (!cleaned) {
+        return `<p>${exemptText}</p>`
+      }
+      return `${cleaned}<p>${exemptText}</p>`
     },
     back() {
       this.parent.showFlag = true

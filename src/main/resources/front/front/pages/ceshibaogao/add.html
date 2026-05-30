@@ -149,7 +149,7 @@
                             <button :style='{"padding":"0 10px","boxShadow":"0 0 6px rgba(31, 147, 255,.3)","margin":"0 10px 0 0","borderColor":"#ccc","backgroundColor":"rgba(44, 79, 112, 0.73)","color":"#fff","borderRadius":"8px","borderWidth":"0","width":"auto","fontSize":"14px","borderStyle":"solid","height":"44px"}' type="button" class="layui-btn btn-theme" id="baogaowenjianUpload">
 								<i v-if="true"  :style='{"color":"#fff","show":true,"fontSize":"14px"}' class="layui-icon">&#xe67c;</i>上传报告文件
 							</button>
-							<a :style='{"padding":"0 10px","boxShadow":"0 0 0px rgba(31, 147, 255,.3)","margin":"0 10px 0 0","borderColor":"rgba(55, 89, 122, 0.73)","backgroundColor":"#fff","color":"rgba(0, 0, 0, 1)","borderRadius":"8px","borderWidth":"1px","width":"auto","fontSize":"14px","borderStyle":"solid","height":"44px"}' style="display:block;text-decoration: none;line-height: 44px;" download="报告文件" :href="detail.baogaowenjian"><i v-if="true" :style='{"color":"#333","show":true,"fontSize":"14px"}' class="layui-icon layui-icon-download-circle"></i> 点击下载报告文件</a>
+								<a v-if="detail.baogaowenjian" :style='{"padding":"0 10px","boxShadow":"0 0 0px rgba(31, 147, 255,.3)","margin":"0 10px 0 0","borderColor":"rgba(55, 89, 122, 0.73)","backgroundColor":"#fff","color":"rgba(0, 0, 0, 1)","borderRadius":"8px","borderWidth":"1px","width":"auto","fontSize":"14px","borderStyle":"solid","height":"44px"}' style="display:block;text-decoration: none;line-height: 44px;" download="报告文件" :href="downloadUrl(detail.baogaowenjian)"><i v-if="true" :style='{"color":"#333","show":true,"fontSize":"14px"}' class="layui-icon layui-icon-download-circle"></i> 下载已上传文件</a>
 						</div>
 					</div>
                     <div  :style='{"padding":"10px","boxShadow":"0 0 6px rgba(31, 147, 255,.3)","margin":"0 0 10px 0","borderColor":"rgba(255,0,0,.3)","backgroundColor":"#fff","borderRadius":"4px","borderWidth":"0 0 1px 0","borderStyle":"solid"}' class="layui-form-item" pane>
@@ -254,11 +254,18 @@
                 computed: {
                 },
 				methods: {
-					jump(url) {
-						jump(url)
+						jump(url) {
+							jump(url)
+						},
+						downloadUrl(file) {
+							if(!file) {
+								return ''
+							}
+							var fileName = file.split('/').pop()
+							return this.baseurl + 'file/download?fileName=' + encodeURIComponent(fileName)
+						}
 					}
-				}
-			})
+				})
 
 
 			layui.use(['layer', 'element', 'carousel', 'http', 'jquery', 'form', 'upload', 'laydate','tinymce'], function() {
