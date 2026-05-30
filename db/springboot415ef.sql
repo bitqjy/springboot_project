@@ -132,9 +132,9 @@ INSERT INTO `config` VALUES
 (1,'picture1','upload/1646978956472.jpg'),
 (2,'picture2','upload/picture2.jpg'),
 (3,'picture3','upload/picture3.jpg'),
-(4,'llmBaseUrl','https://api.openai.com'),
-(5,'llmApiKey','请在后台配置真实密钥'),
-(6,'llmModel','gpt-4o-mini');
+(4,'llmBaseUrl','https://api.deepseek.com'),
+(5,'llmApiKey','sk-diipiumhoceaggiaprfpfogrcoaemmbtnmlvnvqinsakducv'),
+(6,'llmModel','deepseek-v4-flash');
 /*!40000 ALTER TABLE `config` ENABLE KEYS */;
 UNLOCK TABLES;
 

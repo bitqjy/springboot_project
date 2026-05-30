@@ -1,12 +1,12 @@
 -- 初始化大模型配置（重复执行安全）
 INSERT INTO `config` (`name`, `value`)
-SELECT 'llmBaseUrl', 'https://api.openai.com'
+SELECT 'llmBaseUrl', 'https://api.deepseek.com'
 WHERE NOT EXISTS (SELECT 1 FROM `config` WHERE `name` = 'llmBaseUrl');
 
 INSERT INTO `config` (`name`, `value`)
-SELECT 'llmApiKey', '请在后台配置真实密钥'
+SELECT 'llmApiKey', 'sk-diipiumhoceaggiaprfpfogrcoaemmbtnmlvnvqinsakducv'
 WHERE NOT EXISTS (SELECT 1 FROM `config` WHERE `name` = 'llmApiKey');
 
 INSERT INTO `config` (`name`, `value`)
-SELECT 'llmModel', 'gpt-4o-mini'
+SELECT 'llmModel', 'deepseek-v4-flash'
 WHERE NOT EXISTS (SELECT 1 FROM `config` WHERE `name` = 'llmModel');

@@ -97,6 +97,7 @@ public class AiAdviceServiceImpl implements AiAdviceService {
      * - https://xxx/v1
      * - https://xxx/v1/
      * - https://xxx/chat/completions
+     * - https://api.deepseek.com
      */
     private String resolveChatCompletionsUrl(String baseUrl) {
         String normalized = StringUtils.trimToEmpty(baseUrl);
@@ -107,6 +108,10 @@ public class AiAdviceServiceImpl implements AiAdviceService {
             return normalized;
         }
         if (normalized.endsWith("/v1")) {
+            return normalized + "/chat/completions";
+        }
+        if ("https://api.deepseek.com".equalsIgnoreCase(normalized)
+                || "http://api.deepseek.com".equalsIgnoreCase(normalized)) {
             return normalized + "/chat/completions";
         }
         return normalized + "/v1/chat/completions";
